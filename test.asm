@@ -1,80 +1,75 @@
-section .data
-    ClassName db "WindowClass", 0
-    AppName db "My Window", 0
+format PE GUI
+entry start
 
-section .bss
-    wc resb 48
-    msg resb 28
-    hwnd resd 1
+include 'win32a.inc'
 
-section .text
-    global _start
-    extern _GetModuleHandleA@4, _ExitProcess@4
-    extern _RegisterClassExA@4, _CreateWindowExA@48
-    extern _ShowWindow@8, _GetMessageA@16
-    extern _TranslateMessage@4, _DispatchMessageA@4
+section '.data' data readable writeable
+  className db 'FASMWINCLASS',0
+  windowName db 'My Window',0
+  wc WNDCLASSEX
+  msg MSG
 
-_start:
-    ; Initialize WNDCLASSEX structure
-    mov dword [wc], 48 ; size of WNDCLASSEX
-    mov dword [wc+4], 3 ; CS_HREDRAW | CS_VREDRAW
-    mov dword [wc+8], WndProc
-    mov dword [wc+12], 0 ; cbClsExtra
-    mov dword [wc+16], 0 ; cbWndExtra
-    push 0 ; NULL
-    call _GetModuleHandleA@4
-    mov dword [wc+20], eax ; hInstance
-    mov dword [wc+24], 0 ; hIcon
-    mov dword [wc+28], 0 ; hCursor
-    mov dword [wc+32], 5 ; COLOR_WINDOW
-    mov dword [wc+36], 0 ; lpszMenuName
-    mov dword [wc+40], ClassName
-    mov dword [wc+44], 0 ; hIconSm
-    push wc
-    call _RegisterClassExA@4
+section '.text' code readable executable
+start:
+  ; Initialize WNDCLASSEX structure
+  mov [wc.cbSize], sizeof.WNDCLASSEX
+  mov [wc.style], CS_HREDRAW + CS_VREDRAW
+  mov [wc.lpfnWndProc], WndProc
+  mov [wc.hInstance], 400000h
+  mov [wc.lpszClassName], className
+  mov [wc.hbrBackground], COLOR_WINDOW+1
 
-    ; Create Window
-    push 0 ; lParam
-    push 0 ; hMenu
-    push 0 ; hWndParent
-    push 300 ; height
-    push 300 ; width
-    push 0 ; y
-    push 0 ; x
-    push 0x80000000 ; WS_VISIBLE
-    push AppName
-    push ClassName
-    push 0 ; dwExStyle
-    call _GetModuleHandleA@4
-    push eax ; hInstance
-    call _CreateWindowExA@48
-    mov [hwnd], eax
+  ; RegisterClassEx
+  invoke RegisterClassEx, wc
 
-    ; Show Window
-    push 1 ; nCmdShow
-    push eax ; hWnd
-    call _ShowWindow@8
+  ; CreateWindowEx
+  invoke CreateWindowEx, 0, className, windowName, WS_OVERLAPPEDWINDOW, 100, 100, 600, 400, NULL, NULL, 400000h, NULL
+  test eax, eax
+  jz exit
 
-    ; Message Loop
-message_loop:
-    push 0 ; filterMax
-    push 0 ; filterMin
-    push 0 ; hWnd
-    push msg
-    call _GetMessageA@16
-    test eax, eax
-    jz end_program
-    push msg
-    call _TranslateMessage@4
-    push msg
-    call _DispatchMessageA@4
-    jmp message_loop
+  ; ShowWindow
+  invoke ShowWindow, eax, SW_SHOWDEFAULT
 
-end_program:
-    push 0
-    call _ExitProcess@4
+  ; Message loop
+msg_loop:
+  invoke GetMessage, msg, NULL, 0, 0
+  cmp eax, 0
+  je exit
+  invoke TranslateMessage, msg
+  invoke DispatchMessage, msg
+  jmp msg_loop
 
-; Window Procedure
-WndProc:
-    ret 16
+exit:
+  invoke ExitProcess, 0
 
+proc WndProc hwnd, umsg, wparam, lparam
+  cmp [umsg], WM_DESTROY
+  je .wmdestroy
+
+  .defwndproc:
+  invoke DefWindowProc,[hwnd],[umsg],[wparam],[lparam]
+  ret
+
+  .wmdestroy:
+  invoke PostQuitMessage, 0
+  xor eax, eax
+  ret
+endp
+
+section '.idata' import data readable writeable
+
+  library kernel, 'KERNEL32.DLL',\
+          user, 'USER32.DLL'
+
+  import kernel,\
+         ExitProcess, 'ExitProcess'
+
+  import user,\
+         RegisterClassEx, 'RegisterClassExA',\
+         CreateWindowEx, 'CreateWindowExA',\
+         ShowWindow, 'ShowWindow',\
+         GetMessage, 'GetMessageA',\
+         TranslateMessage, 'TranslateMessage',\
+         DispatchMessage, 'DispatchMessageA',\
+         DefWindowProc, 'DefWindowProcA',\
+         PostQuitMessage, 'PostQuitMessage'
